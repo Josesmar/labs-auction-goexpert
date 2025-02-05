@@ -79,6 +79,7 @@ func (bd *BidRepository) CreateBid(
 					logger.Error("Error trying to insert bid", err)
 					return
 				}
+				logger.Info("Bid inserido com sucesso no MongoDB")
 
 				return
 			}
