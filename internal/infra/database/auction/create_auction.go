@@ -14,12 +14,12 @@ import (
 )
 
 type AuctionEntityMongo struct {
-	Id          string                          `bson:"_id"`
+	Id          string                          `bson:"_id,omitempty"`
 	ProductName string                          `bson:"product_name"`
 	Category    string                          `bson:"category"`
 	Description string                          `bson:"description"`
 	Condition   auction_entity.ProductCondition `bson:"condition"`
-	Status      auction_entity.AuctionStatus    `bson:"status"`
+	Status      string                          `bson:"status"`
 	Timestamp   int64                           `bson:"timestamp"`
 }
 type AuctionRepository struct {
@@ -35,13 +35,17 @@ func NewAuctionRepository(database *mongo.Database) *AuctionRepository {
 }
 
 func (ar *AuctionRepository) CreateAuction(ctx context.Context, auctionEntity *auction_entity.Auction) *internal_error.InternalError {
+	statusMap := map[auction_entity.AuctionStatus]string{
+		0: "active",
+		1: "closed",
+	}
 	auctionEntityMongo := &AuctionEntityMongo{
 		Id:          auctionEntity.Id,
 		ProductName: auctionEntity.ProductName,
 		Category:    auctionEntity.Category,
 		Description: auctionEntity.Description,
 		Condition:   auctionEntity.Condition,
-		Status:      auctionEntity.Status,
+		Status:      statusMap[auctionEntity.Status],
 		Timestamp:   auctionEntity.Timestamp.Unix(),
 	}
 	_, err := ar.Collection.InsertOne(ctx, auctionEntityMongo)

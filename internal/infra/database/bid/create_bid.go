@@ -2,6 +2,7 @@ package bid
 
 import (
 	"context"
+	"fmt"
 	"fullcycle-auction_go/configuration/logger"
 	"fullcycle-auction_go/internal/entity/auction_entity"
 	"fullcycle-auction_go/internal/entity/bid_entity"
@@ -44,70 +45,58 @@ func NewBidRepository(database *mongo.Database, auctionRepository *auction.Aucti
 	}
 }
 
-func (bd *BidRepository) CreateBid(
-	ctx context.Context,
-	bidEntities []bid_entity.Bid) *internal_error.InternalError {
-	var wg sync.WaitGroup
+func (bd *BidRepository) CreateBid(ctx context.Context, bidEntities []bid_entity.Bid) *internal_error.InternalError {
 	for _, bid := range bidEntities {
-		wg.Add(1)
-		go func(bidValue bid_entity.Bid) {
-			defer wg.Done()
+		bd.auctionStatusMapMutex.Lock()
+		auctionStatus, okStatus := bd.auctionStatusMap[bid.AuctionId]
+		bd.auctionStatusMapMutex.Unlock()
 
-			bd.auctionStatusMapMutex.Lock()
-			auctionStatus, okStatus := bd.auctionStatusMap[bidValue.AuctionId]
-			bd.auctionStatusMapMutex.Unlock()
+		bd.auctionEndTimeMutex.Lock()
+		auctionEndTime, okEndTime := bd.auctionEndTimeMap[bid.AuctionId]
+		bd.auctionEndTimeMutex.Unlock()
 
-			bd.auctionEndTimeMutex.Lock()
-			auctionEndTime, okEndTime := bd.auctionEndTimeMap[bidValue.AuctionId]
-			bd.auctionEndTimeMutex.Unlock()
-
-			bidEntityMongo := &BidEntityMongo{
-				Id:        bidValue.Id,
-				UserId:    bidValue.UserId,
-				AuctionId: bidValue.AuctionId,
-				Amount:    bidValue.Amount,
-				Timestamp: bidValue.Timestamp.Unix(),
+		if okEndTime && okStatus {
+			if auctionStatus == auction_entity.Completed || time.Now().After(auctionEndTime) {
+				logger.Info(fmt.Sprintf("Auction %s completed", bid.AuctionId))
+				continue
 			}
-
-			if okEndTime && okStatus {
-				now := time.Now()
-				if auctionStatus == auction_entity.Completed || now.After(auctionEndTime) {
-					return
-				}
-
-				if _, err := bd.Collection.InsertOne(ctx, bidEntityMongo); err != nil {
-					logger.Error("Error trying to insert bid", err)
-					return
-				}
-				logger.Info("Bid inserido com sucesso no MongoDB")
-
-				return
-			}
-
-			auctionEntity, err := bd.AuctionRepository.FindAuctionById(ctx, bidValue.AuctionId)
+		} else {
+			auctionEntity, err := bd.AuctionRepository.FindAuctionById(ctx, bid.AuctionId)
 			if err != nil {
-				logger.Error("Error trying to find auction by id", err)
-				return
+				logger.Error(fmt.Sprintf("Erro ao buscar leilão ID %s", bid.AuctionId), err)
+				return internal_error.NewInternalServerError("Erro ao buscar leilão")
 			}
 			if auctionEntity.Status == auction_entity.Completed {
-				return
+				logger.Info(fmt.Sprintf("Auction %s is completed, bid rejected", bid.AuctionId))
+				continue
 			}
 
 			bd.auctionStatusMapMutex.Lock()
-			bd.auctionStatusMap[bidValue.AuctionId] = auctionEntity.Status
+			bd.auctionStatusMap[bid.AuctionId] = auctionEntity.Status
 			bd.auctionStatusMapMutex.Unlock()
 
 			bd.auctionEndTimeMutex.Lock()
-			bd.auctionEndTimeMap[bidValue.AuctionId] = auctionEntity.Timestamp.Add(bd.auctionInterval)
+			bd.auctionEndTimeMap[bid.AuctionId] = auctionEntity.Timestamp
 			bd.auctionEndTimeMutex.Unlock()
+		}
 
-			if _, err := bd.Collection.InsertOne(ctx, bidEntityMongo); err != nil {
-				logger.Error("Error trying to insert bid", err)
-				return
-			}
-		}(bid)
+		bidEntityMongo := &BidEntityMongo{
+			Id:        bid.Id,
+			UserId:    bid.UserId,
+			AuctionId: bid.AuctionId,
+			Amount:    bid.Amount,
+			Timestamp: bid.Timestamp.Unix(),
+		}
+
+		_, err := bd.Collection.InsertOne(ctx, bidEntityMongo)
+		if err != nil {
+			logger.Error("Error inserting bid entity", err)
+			return internal_error.NewInternalServerError("Erro ao inserir bid no banco de dados")
+		}
+
+		logger.Info("✅ Bid inserido com sucesso no MongoDB")
 	}
-	wg.Wait()
+
 	return nil
 }
 
@@ -115,8 +104,7 @@ func getAuctionInterval() time.Duration {
 	auctionInterval := os.Getenv("AUCTION_INTERVAL")
 	duration, err := time.ParseDuration(auctionInterval)
 	if err != nil {
-		return time.Minute * 5
+		return time.Minute * 5 // Valor padrão caso a conversão falhe
 	}
-
 	return duration
 }

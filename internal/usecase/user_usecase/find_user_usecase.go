@@ -25,6 +25,9 @@ type UserUseCaseInterface interface {
 	FindUserById(
 		ctx context.Context,
 		id string) (*UserOutputDTO, *internal_error.InternalError)
+	CreateUser(
+		ctx context.Context,
+		user *UserOutputDTO) *internal_error.InternalError
 }
 
 func (u *UserUseCase) FindUserById(
@@ -38,4 +41,17 @@ func (u *UserUseCase) FindUserById(
 		Id:   userEntity.Id,
 		Name: userEntity.Name,
 	}, nil
+}
+
+func (u *UserUseCase) CreateUser(
+	ctx context.Context, user *UserOutputDTO) *internal_error.InternalError {
+
+	err := u.UserRepository.CreateUser(ctx, &user_entity.User{
+		Id:   user.Id,
+		Name: user.Name,
+	})
+	if err != nil {
+		return err
+	}
+	return nil
 }

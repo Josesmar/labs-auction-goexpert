@@ -7,8 +7,10 @@ import (
 	"fullcycle-auction_go/configuration/logger"
 	"fullcycle-auction_go/internal/entity/user_entity"
 	"fullcycle-auction_go/internal/internal_error"
+
 	"go.mongodb.org/mongo-driver/bson"
 	"go.mongodb.org/mongo-driver/mongo"
+	"go.mongodb.org/mongo-driver/mongo/options"
 )
 
 type UserEntityMongo struct {
@@ -49,4 +51,32 @@ func (ur *UserRepository) FindUserById(
 	}
 
 	return userEntity, nil
+}
+
+func (ur *UserRepository) CreateUser(
+	ctx context.Context, user *user_entity.User) *internal_error.InternalError {
+
+	opts := options.InsertOne()
+
+	_, err := ur.Collection.InsertOne(ctx, UserEntityMongo{
+		Id:   user.Id,
+		Name: user.Name,
+	}, opts)
+
+	if err != nil {
+		if writeErr, ok := err.(mongo.WriteException); ok {
+			for _, e := range writeErr.WriteErrors {
+				if e.Code == 11000 {
+					logger.Info(fmt.Sprintf("User already exists with id: %s", user.Id))
+					return internal_error.NewConflictError("User already exists")
+				}
+			}
+		}
+
+		logger.Error(fmt.Sprintf("Error creating user with id: %s", user.Id), err)
+		return internal_error.NewInternalServerError(
+			fmt.Sprintf("Error creating user with id: %s", user.Id))
+	}
+
+	return nil
 }
