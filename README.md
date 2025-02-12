@@ -161,6 +161,81 @@ Body:
 }
 ```
 
+### Passo a passo para rodar o teste no docker
+1. Verificar se o Docker Está Instalado
+
+Antes de tudo, verifique se o Docker está instalado na sua máquina:
+
+```bash
+docker --version
+```
+
+Se o comando não funcionar, instale o Docker seguindo as instruções do site oficial: 🔗 https://www.docker.com/get-started
+
+2. Subir os Containers com o MongoDB
+
+Certifique-se de que o docker-compose.yml está configurado corretamente e rode o seguinte comando para iniciar os serviços:
+```bash
+docker-compose up --build -d
+```
+Isso irá:
+* Construir a aplicação.
+* Subir o container do MongoDB.
+* Manter os serviços rodando em background (-d).
+
+Verifique se os containers estão rodando corretamente:
+```bash
+docker ps
+```
+O resultado deve mostrar algo como:
+```bash
+CONTAINER ID   IMAGE                     COMMAND                STATUS   NAMES
+123abc456def   auction-goexpert-app      "/app/auction sh -c…"   Up      auction-goexpert-app-1
+789ghi012jkl   mongo:latest              "docker-entrypoint.…"  Up      mongodb
+```
+Se o MongoDB não aparecer, suba o serviço manualmente:
+```bash
+docker-compose up -d mongodb
+````
+3. Entrar no Container da Aplicação
+Agora, entre no container da aplicação:
+```bash
+docker exec -it auction-goexpert-app-1 sh
+```
+Isso abrirá um terminal dentro do container.
+Verifique se as variáveis de ambiente estão corretas:
+```
+printenv | grep MONGODB
+```
+
+O esperado é:
+```
+MONGODB_URL=mongodb://admin:admin@mongodb:27017/auctions?authSource=admin
+MONGODB_DB=auctions
+````
+
+Se as variáveis não estiverem definidas, adicione-as no .env.test e reinicie os containers (Passo 2).
+
+4. Rodar os Testes Dentro do Container
+Agora, execute os testes:
+```
+go test -v ./...
+```
+Ou para rodar apenas um teste específico:
+```
+go test -timeout 30s -run ^TestCloseExpiredAuctions$ 
+fullcycle-auction_go/internal/infra/database/auction
+```
+Se os testes passarem, o output será algo como:
+```
+=== RUN   TestCloseExpiredAuctions
+--- PASS: TestCloseExpiredAuctions (0.05s)
+PASS
+ok      fullcycle-auction_go/internal/infra/database/auction    0.063s
+```
+
+
+
 ### Tecnologias Utilizadas
 
 * Go (Golang): Backend principal
